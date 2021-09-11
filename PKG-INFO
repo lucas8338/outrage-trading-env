@@ -1,0 +1,18 @@
+Metadata-Version: 2.1
+Name: outrage-trading-env
+Version: 1.0.0
+Summary: A gym-env to do trading (forex/stock/crypto) using reinforcement-learning
+Author: Lucas Monteiro
+Author-email: lucas.ma8338@gmail.com
+Requires-Python: >=3
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Requires-Dist: gym (>=0,<1)
+Requires-Dist: numpy (>=1,<2)
+Requires-Dist: pandas (>=1,<2)
+Requires-Dist: sklearn (>=0,<1)
