@@ -12,7 +12,7 @@ install_requires = \
 
 setup_kwargs = {
     'name': 'outrage-trading-env',
-    'version': '1.0.0',
+    'version': '1.0.1',
     'description': 'A gym-env to do trading (forex/stock/crypto) using reinforcement-learning',
     'long_description': None,
     'author': 'Lucas Monteiro',
