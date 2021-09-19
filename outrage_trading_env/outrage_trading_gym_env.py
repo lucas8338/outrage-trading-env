@@ -8,7 +8,7 @@ import sklearn.preprocessing as sklpp
 
 class outrage_trading_env(gym.Env):
     metadata = {'render.modes': ['human']}
-    def __init__(self,df,df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.01,pip_loss_position_equility_to_done:float=0.01,len_reduce_prevent:bool=False):
+    def __init__(self,df,df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035,len_reduce_prevent:bool=False):
         """
         Parameters
         ----------
