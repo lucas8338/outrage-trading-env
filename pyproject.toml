@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "outrage-trading-env"
-version = "1.0.0"
+version = "1.0.1"
 description = "A gym-env to do trading (forex/stock/crypto) using reinforcement-learning"
 authors = ["Lucas Monteiro <lucas.ma8338@gmail.com>"]
 
