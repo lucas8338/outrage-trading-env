@@ -4,7 +4,7 @@ import gym.spaces
 import pandas as pd
 import numpy as np
 import sklearn.preprocessing as sklpp
-from libs import split_into_samples
+from .libs import split_into_samples
 import sklearn.decomposition as skld
 import pickle as pl
 import os
@@ -49,6 +49,7 @@ class outrage_trading_env(gym.Env):
             for i in range(len(sampled_df_to_pca)):                                                                #normalization and ravelization of the splitted dataframe for pca
                 sampled_df_to_pca[i]=np.ravel(sklpp.minmax_scale(sampled_df_to_pca[i],feature_range=(0.01,1)))     #
             self.pca=skld.PCA(n_components=pca_number_of_components).fit(sampled_df_to_pca) #fit the pca function
+            print("\u001b[1;4;34mExpained variance of the actual fitted pca: "+str(np.cumsum(self.pca.explained_variance_ratio_)[-1])+"\u001b[1;4;0m")
             if os.path.isfile(pca_file_location)==False:
                 pl.dump(self.pca,open(pca_file_location,'wb')) #dump the fitted pca to a file
             else:
