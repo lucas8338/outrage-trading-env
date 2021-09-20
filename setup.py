@@ -2,7 +2,7 @@
 from setuptools import setup
 
 packages = \
-['outrage_trading_env']
+['outrage_trading_env', 'outrage_trading_env.libs']
 
 package_data = \
 {'': ['*']}
@@ -12,7 +12,7 @@ install_requires = \
 
 setup_kwargs = {
     'name': 'outrage-trading-env',
-    'version': '1.0.1',
+    'version': '2.0.0',
     'description': 'A gym-env to do trading (forex/stock/crypto) using reinforcement-learning',
     'long_description': None,
     'author': 'Lucas Monteiro',

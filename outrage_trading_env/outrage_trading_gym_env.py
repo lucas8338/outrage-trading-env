@@ -1,17 +1,27 @@
+from itertools import filterfalse
 import gym
 import gym.spaces
 import pandas as pd
 import numpy as np
 import sklearn.preprocessing as sklpp
-
-
+from .libs import split_into_samples
+import sklearn.decomposition as skld
+import pickle as pl
+import os
 
 class outrage_trading_env(gym.Env):
     metadata = {'render.modes': ['human']}
-    def __init__(self,df,df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035,len_reduce_prevent:bool=False):
+    def __init__(self,df,load_a_fitted_pca_file:bool,pca_file_location:'str|None',pca_number_of_components:int=40,df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035,len_reduce_prevent:bool=False):
         """
         Parameters
         ----------
+        *df: pd.dataframe
+            a pandas dataframe with the data
+        *load_a_fitted_pca_file: bool
+            load a already fitted pca file, you must to set it to False if is the first time that you is training the env, and True if you 
+            is continuing you training with a trained/pre-trained model
+        *pca_number_of_components: int
+            set the number of components to pca, 40 for forex data ("EUR/USD") generally expains more than '90%' of the variance
         *df_price: string
             name of the column with the price
         *df_spread: string or None
@@ -33,6 +43,20 @@ class outrage_trading_env(gym.Env):
         *len_reduce_prevent: bool
             test option, if true this will prevent the lenght of the episode be lesser previous episode lenght this way the episode lenght only increase not decrease
         """
+        ###[ pca configuration ]###
+        if load_a_fitted_pca_file==False:
+            sampled_df_to_pca=split_into_samples(data_dataframe=df,number_of_samples=bars_per_observation) #split the dataframe to fit the pca function
+            for i in range(len(sampled_df_to_pca)):                                                                #normalization and ravelization of the splitted dataframe for pca
+                sampled_df_to_pca[i]=np.ravel(sklpp.minmax_scale(sampled_df_to_pca[i],feature_range=(0.01,1)))     #
+            self.pca=skld.PCA(n_components=pca_number_of_components).fit(sampled_df_to_pca) #fit the pca function
+            print("\u001b[1;4;34mExpained variance of the actual fitted pca: "+str(np.cumsum(self.pca.explained_variance_ratio_)[-1])+"\u001b[1;4;0m")
+            if os.path.isfile(pca_file_location)==False:
+                pl.dump(self.pca,open(pca_file_location,'wb')) #dump the fitted pca to a file
+            else:
+                raise Exception("pca 'pickle.dump' -> file already exists at location setted to save the fitted pca file")
+        else:
+            self.pca=pl.load(open(pca_file_location,'rb')) #load the fitted pca from a file
+        ###########################
         if isinstance(df,pd.DataFrame):
             pass
         else:
@@ -51,9 +75,9 @@ class outrage_trading_env(gym.Env):
         self.last_reset_len=0 #storage the last reset lenght and will not be reseted
         self.action_space=gym.spaces.Discrete(3)
         self.observation_space=gym.spaces.Box(
-            low=0.01,
-            high=1.0,
-            shape=(self.bars_per_observation*len(self.columns_to_observe),),
+            low=-np.inf,
+            high=np.inf,
+            shape=(pca_number_of_components,),
             dtype=np.float32)
     def reset(self):
         self.done=False
@@ -65,7 +89,7 @@ class outrage_trading_env(gym.Env):
         self.hightest_total_profit=0.00 #keeps the hightest profit to calculate the equility drawdown
         self.niter=0 #the number of time step has been called
         self.nbar=1+self.bars_per_observation #will be always the number of the current bar
-        newobs=np.ravel(sklpp.minmax_scale(self.data[self.columns_to_observe].iloc[:self.bars_per_observation].to_numpy(),feature_range=(0.01,1)))
+        newobs=self.pca.transform(np.reshape(np.ravel(sklpp.minmax_scale(self.data[self.columns_to_observe].iloc[:self.bars_per_observation].to_numpy(),feature_range=(0.01,1))),(1,-1)))[0]
         
         return np.array(newobs)
     def step(self,action):
@@ -128,7 +152,7 @@ class outrage_trading_env(gym.Env):
             self.last_reset_len=self.niter if (self.nbar<self.data.index.size and self.len_reduce_prevent==True) else 0 #will set always 0 if the len_reduce_prevent==False
 
         self.reward=self.position['profit']+self.total_profit  #the reward is the sum of the profit of the actual position (starts negative due the spread) and the total_profit ("balance")
-        newobs=np.ravel(sklpp.minmax_scale(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1].to_numpy(),feature_range=(0.01,1)))
+        newobs=self.pca.transform(np.reshape(np.ravel(sklpp.minmax_scale(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1].to_numpy(),feature_range=(0.01,1))),(1,-1)))[0]
         
         #                                       V test is because i think the agent cant read very low values to reward so multipling it to contrate_value will be all rewards changes can be readen
         return np.array(newobs),self.reward*self.contrate_value,self.done,info

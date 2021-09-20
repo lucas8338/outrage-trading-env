@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: outrage-trading-env
-Version: 1.0.1
+Version: 2.0.0
 Summary: A gym-env to do trading (forex/stock/crypto) using reinforcement-learning
 Author: Lucas Monteiro
 Author-email: lucas.ma8338@gmail.com
