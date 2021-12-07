@@ -1,1 +1,1 @@
-from .outrage_trading_gym_env import outrage_trading_env
+from .outrage_trading_gym_env import *
