@@ -1,7 +1,7 @@
 from setuptools import setup,find_packages
 
 setup(name='outrage_trading_env',
-      version='2.0.0',
+      version='2.1.0',
       description='A gym-env to do trading (forex/stock/crypto) using reinforcement-learning',
       author='Lucas Monteiro',
       author_email='lucas.ma8338@gmail.com',

@@ -3,20 +3,18 @@ import gym.spaces
 import pandas as pd
 import numpy as np
 import sklearn.preprocessing as sklpp
+from typing_extensions import Literal
 
 class outrage_trading_env(gym.Env):
     metadata = {'render.modes': ['human']}
-    def __init__(self,df,df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035,len_reduce_prevent:bool=False):
+    def __init__(self,df:pd.DataFrame,number_of_actions:'Literal[2,3]',df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035,len_reduce_prevent:bool=False):
         """
         Parameters
         ----------
         *df: pd.dataframe
             a pandas dataframe with the data
-        *load_a_fitted_pca_file: bool
-            load a already fitted pca file, you must to set it to False if is the first time that you is training the env, and True if you 
-            is continuing you training with a trained/pre-trained model
-        *pca_number_of_components: int
-            set the number of components to pca, 40 for forex data ("EUR/USD") generally expains more than '90%' of the variance
+        *number_of_actions: 2 or 3
+            the number of action in a action space discrete(number), whether 2 the env is buy/sell only whether 3 the is is buy/sell/nothing
         *df_price: string
             name of the column with the price
         *df_spread: string or None
@@ -44,6 +42,7 @@ class outrage_trading_env(gym.Env):
         else:
             raise ValueError('df need to be a pandas.dataframe')
         self.data=df
+        self.number_of_actions=number_of_actions
         self.df_price=df_price
         self.df_spread=df_spread
         self.alternative_spread=alternative_spread
@@ -55,12 +54,13 @@ class outrage_trading_env(gym.Env):
         self.pip_loss_position_equility_to_done=pip_loss_position_equility_to_done
         self.len_reduce_prevent=len_reduce_prevent
         self.last_reset_len=0 #storage the last reset lenght and will not be reseted
-        self.action_space=gym.spaces.Discrete(2)
+        self.action_space=gym.spaces.Discrete(2) if self.number_of_actions==2 else gym.spaces.Discrete(3) if self.number_of_actions==3 else None
         self.observation_space=gym.spaces.Box(
-            low=-np.inf,
-            high=np.inf,
+            low=1,
+            high=100,
             shape=(self.bars_per_observation*len(self.columns_to_observe),),
             dtype=np.float32)
+            
     def reset(self):
         self.done=False
         self.reward=0
@@ -71,9 +71,8 @@ class outrage_trading_env(gym.Env):
         self.hightest_total_profit=0.00 #keeps the hightest profit to calculate the equility drawdown
         self.niter=0 #the number of time step has been called
         self.nbar=1+self.bars_per_observation #will be always the number of the current bar
-        newobs=np.ravel(sklpp.minmax_scale(self.data[self.columns_to_observe].iloc[:self.bars_per_observation].to_numpy(),feature_range=(0.01,1)))
-        
-        return np.array(newobs)
+        newobs=self.preprocess_obs(self.data[self.columns_to_observe].iloc[:self.bars_per_observation])
+        return newobs
     
     def calculate_profit(self):
         #calc profit
@@ -81,6 +80,9 @@ class outrage_trading_env(gym.Env):
             self.position['profit']=self.data[self.df_price].iloc[self.nbar]-self.position['opened_price']+self.spread #the profit is the difference between opened and actual price plus self.spread
         elif self.position['type']=='sell':
             self.position['profit']=self.position['opened_price']-self.data[self.df_price].iloc[self.nbar]+self.spread #the profit is the difference between opened and actual price plus self.spread
+
+    def preprocess_obs(self,obs) -> np.array:
+        return np.array(np.ravel(sklpp.minmax_scale(obs.to_numpy(),feature_range=(1,100))))
 
     def step(self,action):
         #calculate self.spread
@@ -114,14 +116,12 @@ class outrage_trading_env(gym.Env):
             self.total_profit+=self.position['profit']
             self.position['profit']=self.spread #reset the profit of the position
             self.number_of_trades+=1
-        # the commented stuffs bellow is the code for do nothing
-        # elif self.position['type']!='' and action==0: #close buy/sell orders and open nothing
-            # self.position['type']=''
-            # self.position['opened_price']=None
-            # self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
-            # self.total_profit+=self.position['profit']
-            # self.position['profit']=0.0
-            # self.number_of_trades+=1
+        elif self.position['type']!='' and action==2: #close buy/sell orders and open nothing
+            self.position['type']=''
+            self.position['opened_price']=None
+            self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
+            self.total_profit+=self.position['profit']
+            self.position['profit']=0.0
 
         self.calculate_profit()
 
@@ -140,10 +140,10 @@ class outrage_trading_env(gym.Env):
             self.last_reset_len=self.niter if (self.nbar<self.data.index.size and self.len_reduce_prevent==True) else 0 #will set always 0 if the len_reduce_prevent==False
 
         self.reward=self.position['profit']+self.total_profit  #the reward is the sum of the profit of the actual position (starts negative due the self.spread) and the total_profit ("balance")
-        newobs=np.ravel(sklpp.minmax_scale(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1].to_numpy(),feature_range=(0.01,1)))
+        newobs=self.preprocess_obs(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1])
         
         #                                       V test is because i think the agent cant read very low values to reward so multipling it to contrate_value will be all rewards changes can be readen
-        return np.array(newobs),self.reward*self.contrate_value*self.number_of_trades,self.done,info
+        return newobs,self.reward*self.contrate_value*self.number_of_trades,self.done,info
     def render(self,mode='human'):
         pass
     def seed(self,seed=None):
