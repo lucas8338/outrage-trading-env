@@ -63,11 +63,11 @@ class outrage_trading_env(gym.Env):
             
     def reset(self):
         self.done=False
-        self.reward=0
         self.position={'type':'','opened_price':None,'profit':0.00}
         self.sequence_loss=0
         self.number_of_trades=0
         self.total_profit=0.00
+        self.total_drawdown=0.00 #total_drawdown contains the summatory of all negative modification to the balance
         self.hightest_total_profit=0.00 #keeps the hightest profit to calculate the equility drawdown
         self.niter=0 #the number of time step has been called
         self.nbar=1+self.bars_per_observation #will be always the number of the current bar
@@ -105,6 +105,7 @@ class outrage_trading_env(gym.Env):
         if self.position['type']=='buy' and action==1: #close buy order and open sell
             self.position['type']='sell'
             self.position['opened_price']=self.data[self.df_price].iloc[self.nbar-1] #write the new opened price
+            self.total_drawdown=self.total_drawdown+self.position['profit'] if self.position['profit']<0 else self.total_drawdown
             self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
             self.total_profit+=self.position['profit']
             self.position['profit']=self.spread #reset the profit of the position
@@ -112,6 +113,7 @@ class outrage_trading_env(gym.Env):
         elif self.position['type']=='sell' and action==0: #close sell order and open buy
             self.position['type']='buy'
             self.position['opened_price']=self.data[self.df_price].iloc[self.nbar-1] #write the new opened price
+            self.total_drawdown=self.total_drawdown+self.position['profit'] if self.position['profit']<0 else self.total_drawdown
             self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
             self.total_profit+=self.position['profit']
             self.position['profit']=self.spread #reset the profit of the position
@@ -119,6 +121,7 @@ class outrage_trading_env(gym.Env):
         elif self.position['type']!='' and action==2: #close buy/sell orders and open nothing
             self.position['type']=''
             self.position['opened_price']=None
+            self.total_drawdown=self.total_drawdown+self.position['profit'] if self.position['profit']<0 else self.total_drawdown
             self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
             self.total_profit+=self.position['profit']
             self.position['profit']=0.0
@@ -127,8 +130,6 @@ class outrage_trading_env(gym.Env):
 
         self.hightest_total_profit=self.total_profit if self.total_profit>self.hightest_total_profit else self.hightest_total_profit
         #^ update the self.hightest_total_profit keeps the hightest profit
-
-        info={'p_type':self.position['type'],'p_profit':self.position['profit'],'reward':self.reward,'sequence_loss':self.sequence_loss,'number_of_trades':self.number_of_trades,'total_profit':self.total_profit}
 
         
         self.niter+=1
@@ -139,11 +140,14 @@ class outrage_trading_env(gym.Env):
             self.done=True
             self.last_reset_len=self.niter if (self.nbar<self.data.index.size and self.len_reduce_prevent==True) else 0 #will set always 0 if the len_reduce_prevent==False
 
-        self.reward=self.position['profit']+self.total_profit  #the reward is the sum of the profit of the actual position (starts negative due the self.spread) and the total_profit ("balance")
+        equility=self.position['profit']+self.total_profit  #the reward is the sum of the profit of the actual position (starts negative due the self.spread) and the total_profit ("balance")
         newobs=self.preprocess_obs(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1])
-        
-        #                                       V test is because i think the agent cant read very low values to reward so multipling it to contrate_value will be all rewards changes can be readen
-        return newobs,self.reward*self.contrate_value*self.number_of_trades,self.done,info
+
+        reward=(equility**2/(1+abs(self.total_drawdown)**1.2))
+        info={'p_type':self.position['type'],'p_profit':self.position['profit'],'equility':equility,'reward':reward,'sequence_loss':self.sequence_loss,'number_of_trades':self.number_of_trades,'total_profit':self.total_profit,'total_drawdown':self.total_drawdown}
+
+        #                                V multiply with contrate value is because i think the agent cant read very low values to reward so multipling it to contrate_value will be all rewards changes can be readen
+        return newobs,reward*self.contrate_value,self.done,info
     def render(self,mode='human'):
         pass
     def seed(self,seed=None):
