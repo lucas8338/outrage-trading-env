@@ -83,7 +83,7 @@ class outrage_trading_env(gym.Env):
 
     def step(self,action):
         #calculate self.spread
-        self.spread=-self.data[self.df_spread].iloc[self.nbar]/self.contrate_value if self.df_spread!=None else self.alternative_self.spread
+        self.spread=-self.data[self.df_spread].iloc[self.nbar]/self.contrate_value if self.df_spread!=None else self.alternative_spread
 
         self.calculate_profit()
 
