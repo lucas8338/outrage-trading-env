@@ -7,7 +7,7 @@ from typing_extensions import Literal
 
 class outrage_trading_env(gym.Env):
     metadata = {'render.modes': ['human']}
-    def __init__(self,df:pd.DataFrame,number_of_actions:'Literal[2,3]',df_price:str='Close',df_spread:'str|None'='Spread',alternative_spread:int=10,contrate_value:int=100000,bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035):
+    def __init__(self,df:pd.DataFrame,number_of_actions:'Literal[2,3]',reward_reduction_per_step:float=0.0001,df_price:str='Close',df_spread:'str|float|None'='Spread',bars_per_observation:int=64,columns_to_observe:"list[str]"='all',loss_sequence_to_done:int=4,pip_loss_to_done:float=0.035,pip_loss_position_equility_to_done:float=0.035):
         """
         Parameters
         ----------
@@ -15,14 +15,12 @@ class outrage_trading_env(gym.Env):
             a pandas dataframe with the data
         *number_of_actions: 2 or 3
             the number of action in a action space discrete(number), whether 2 the env is buy/sell only whether 3 the is is buy/sell/nothing
+        *reward_reduction_per_step:float
+            the value the env will decrease from reward each step
         *df_price: string
             name of the column with the price
-        *df_spread: string or None
-            name of the column with the spread if the table dont have spread column set it to None
-        *alternative_spread: int
-            will be used if spread is set to None this value will be the fixed spread value
-        *contrate_value: int
-            the number of the contrate size, how much monetary value cost exactly 1 in the trading currency, actualy applied only to spread, for example 1 spread in 'default' forex is 0.1 pip that is 0.00001 (1/100000=0.00001) for crypto is commonly contrate_value=1
+        *df_spread: string or float or None
+            name of the column with the spread if float the spread will be a fixed value and None spread will be 0
         *bars_per_observation: int
             the number of bars the observation will take from number of bars each step
         *columns_to_observe: list[str] or 'all'
@@ -41,12 +39,11 @@ class outrage_trading_env(gym.Env):
             raise ValueError('df need to be a pandas.dataframe')
         self.data=df
         self.number_of_actions=number_of_actions
+        self.reward_reduction_per_step=reward_reduction_per_step
         self.df_price=df_price
         self.df_spread=df_spread
-        self.alternative_spread=alternative_spread
         self.bars_per_observation=bars_per_observation
         self.columns_to_observe=list(self.data.columns) if isinstance(columns_to_observe,str) else columns_to_observe
-        self.contrate_value=contrate_value
         self.loss_sequence_to_done=loss_sequence_to_done
         self.pip_loss_to_done=pip_loss_to_done
         self.pip_loss_position_equility_to_done=pip_loss_position_equility_to_done
@@ -59,6 +56,7 @@ class outrage_trading_env(gym.Env):
             dtype=np.float32)
             
     def reset(self):
+        self.reward=0
         self.position={'type':'','opened_price':None,'profit':0.00}
         self.spread=0.00
         self.sequence_loss=0
@@ -72,51 +70,63 @@ class outrage_trading_env(gym.Env):
         return newobs
     
     def calculate_profit(self):
-        #calc profit
+        """calculate the profit of the actual position"""
         if self.position['type']=='buy':
             self.position['profit']=self.data[self.df_price].iloc[self.nbar]-self.position['opened_price'] #the profit is the difference between opened and actual price plus self.spread
         elif self.position['type']=='sell':
             self.position['profit']=self.position['opened_price']-self.data[self.df_price].iloc[self.nbar] #the profit is the difference between opened and actual price plus self.spread
 
+    def calculate_spread(self):
+        """update self.sperad at actual nbar"""
+        if isinstance(self.df_spread,str):
+            self.spread=self.data[self.df_spread].iloc[self.nbar]
+        elif isinstance(self.df_spread,(float,int)):
+            self.spread=self.df_spread
+        elif self.df_spread is None:
+            self.spread=0
+
     def preprocess_obs(self,obs) -> np.array:
         return np.array(np.ravel(sklpp.minmax_scale(obs.to_numpy(),feature_range=(1,100))))
 
     def step(self,action):
-        #calculate self.spread
-        self.spread=-self.data[self.df_spread].iloc[self.nbar]/self.contrate_value if self.df_spread!=None else self.alternative_spread
-
         self.calculate_profit()
 
         #if dont have any position open position
         if action==0 and self.position['type']=='':
             self.position['type']='buy'
             self.position['opened_price']=self.data[self.df_price].iloc[self.nbar-1]
+            self.calculate_spread()
+            self.number_of_trades+=1
         elif action==1 and self.position['type']=='':
             self.position['type']='sell'
             self.position['opened_price']=self.data[self.df_price].iloc[self.nbar-1]
+            self.calculate_spread()
+            self.number_of_trades+=1
         
 
-        #if there a position and the value predicted is difference, so change the position
+        #if there a position and the action is different, so change the position
         if self.position['type']=='buy' and action==1: #close buy order and open sell
-            self.position['profit']+=self.spread #add spread to the profit
+            self.position['profit']-=self.spread #add spread to the profit
             self.position['type']='sell'
             self.position['opened_price']=self.data[self.df_price].iloc[self.nbar-1] #write the new opened price
             self.total_drawdown=self.total_drawdown+self.position['profit'] if self.position['profit']<0 else self.total_drawdown
             self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
             self.total_profit+=self.position['profit']
             self.position['profit']=0.00 #reset the profit of the position
+            self.calculate_spread()
             self.number_of_trades+=1
         elif self.position['type']=='sell' and action==0: #close sell order and open buy
-            self.position['profit']+=self.spread #add spread to the profit
+            self.position['profit']-=self.spread #add spread to the profit
             self.position['type']='buy'
             self.position['opened_price']=self.data[self.df_price].iloc[self.nbar-1] #write the new opened price
             self.total_drawdown=self.total_drawdown+self.position['profit'] if self.position['profit']<0 else self.total_drawdown
             self.sequence_loss=self.sequence_loss+1 if self.position['profit']<0 else 0 #sequence losses count
             self.total_profit+=self.position['profit']
             self.position['profit']=0.00 #reset the profit of the position
+            self.calculate_spread()
             self.number_of_trades+=1
         elif self.position['type']!='' and action==2: #close buy/sell orders and open nothing
-            self.position['profit']+=self.spread #add spread to the profit
+            self.position['profit']-=self.spread #add spread to the profit
             self.position['type']=''
             self.position['opened_price']=None
             self.total_drawdown=self.total_drawdown+self.position['profit'] if self.position['profit']<0 else self.total_drawdown
@@ -133,21 +143,27 @@ class outrage_trading_env(gym.Env):
         self.niter+=1
         self.nbar+=1
 
-        #!                                                                                                                                                                                                          V done if the loss "equility total" in pips is lower than V                            V done if the loss "equility" (profit of the position) is lower than V
-        if (self.nbar>=self.data.index.size) or (self.sequence_loss>=self.loss_sequence_to_done and self.loss_sequence_to_done>0) or (self.pip_loss_to_done!=0 and self.total_profit<=self.hightest_total_profit-abs(self.pip_loss_to_done)) or (self.pip_loss_position_equility_to_done!=0 and self.position['profit']<=-abs(self.pip_loss_position_equility_to_done)):
+        #calculate the equility
+        equility=self.position['profit']+self.total_profit  #the reward is the sum of the profit of the actual position (starts negative due the self.spread) and the total_profit ("balance")
+
+        #calculate reward
+        self.reward-=abs(self.reward_reduction_per_step)
+        self.reward=self.reward+(self.total_profit+self.position['profit'])
+
+        #calculate the new obsservation
+        newobs=self.preprocess_obs(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1])
+
+        #calculate info
+        info={'action':action,'p_type':self.position['type'],'p_profit':self.position['profit'],'p_profit_with_spread':self.position['profit']-self.spread,'equility':equility,'reward':self.reward,'sequence_loss':self.sequence_loss,'number_of_trades':self.number_of_trades,'total_profit':self.total_profit,'hightest_total_profit':self.hightest_total_profit,'total_drawdown':self.total_drawdown}
+
+        #calculate done                                                                                                                                                                                                          V done if the loss "equility total" in pips is lower than V                            V done if the loss "equility" (profit of the position) is lower than V
+        if (self.nbar >= self.data.index.size) or (self.reward<=-abs(self.pip_loss_to_done)) or (self.sequence_loss >= self.loss_sequence_to_done > 0) or (self.pip_loss_to_done != 0 and self.total_profit <= self.hightest_total_profit - abs(self.pip_loss_to_done)) or (self.pip_loss_position_equility_to_done != 0 and self.position['profit'] <= -abs(self.pip_loss_position_equility_to_done)):
             done=True
         else:
             done=False
-    
 
-        equility=self.position['profit']+self.total_profit  #the reward is the sum of the profit of the actual position (starts negative due the self.spread) and the total_profit ("balance")
-        newobs=self.preprocess_obs(self.data[self.columns_to_observe].iloc[self.niter:self.nbar-1])
+        return newobs,self.reward,done,info
 
-        reward=(equility**2/(1+abs(self.total_drawdown)**1.2))*self.contrate_value
-        info={'action':action,'p_type':self.position['type'],'p_profit':self.position['profit'],'p_profit_with_spread':self.position['profit']+self.spread,'equility':equility,'reward':reward,'sequence_loss':self.sequence_loss,'number_of_trades':self.number_of_trades,'total_profit':self.total_profit,'hightest_total_profit':self.hightest_total_profit,'total_drawdown':self.total_drawdown}
-        
-        #                                V multiply with contrate value is because i think the agent cant read very low values to reward so multipling it to contrate_value will be all rewards changes can be readen
-        return newobs,reward,done,info
     def render(self,mode='human'):
         raise NotImplementedError
     def seed(self,seed=None):
