@@ -134,11 +134,9 @@ class outrage_trading_env(gym.Env):
             self.total_profit+=self.position['profit']
             self.position['profit']=0.0
 
-        self.calculate_profit()
 
+        #update the self.hightest_total_profit keeps the hightest profit
         self.hightest_total_profit=self.total_profit if self.total_profit>self.hightest_total_profit else self.hightest_total_profit
-        #^ update the self.hightest_total_profit keeps the hightest profit
-
         
         self.niter+=1
         self.nbar+=1
