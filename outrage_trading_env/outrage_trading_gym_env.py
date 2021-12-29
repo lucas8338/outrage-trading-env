@@ -2,7 +2,7 @@ import gym
 import gym.spaces
 import pandas as pd
 import numpy as np
-import sklearn.preprocessing as sklpp
+import sklearn.preprocessing
 from typing_extensions import Literal
 
 class outrage_trading_env(gym.Env):
@@ -50,8 +50,8 @@ class outrage_trading_env(gym.Env):
         self.last_reset_len=0 #storage the last reset lenght and will not be reseted
         self.action_space=gym.spaces.Discrete(2) if self.number_of_actions==2 else gym.spaces.Discrete(3) if self.number_of_actions==3 else None
         self.observation_space=gym.spaces.Box(
-            low=1,
-            high=100,
+            low=-np.inf,
+            high=np.inf,
             shape=(self.bars_per_observation*len(self.columns_to_observe),),
             dtype=np.float32)
             
@@ -86,7 +86,7 @@ class outrage_trading_env(gym.Env):
             self.spread=0
 
     def preprocess_obs(self,obs) -> np.array:
-        return np.array(np.ravel(sklpp.minmax_scale(obs.to_numpy(),feature_range=(1,100))))
+        return np.array(np.ravel(sklearn.preprocessing.StandardScaler().fit_transform(X=obs.to_numpy())))
 
     def step(self,action):
         self.calculate_profit()
